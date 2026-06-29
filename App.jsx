@@ -25,6 +25,24 @@ async function sbSavePlayer(code, name, pin, predictions) {
     });
   } catch {}
 }
+async function sbDeletePlayer(code) {
+  try {
+    await fetch(`${SUPA_URL}/rest/v1/players?code=eq.${encodeURIComponent(code)}`, {
+      method: "DELETE",
+      headers: H,
+    });
+    return true;
+  } catch { return false; }
+}
+async function sbDeleteAllPlayers() {
+  try {
+    await fetch(`${SUPA_URL}/rest/v1/players?code=not.is.null`, {
+      method: "DELETE",
+      headers: H,
+    });
+    return true;
+  } catch { return false; }
+}
 async function sbGetResults() {
   try {
     const r = await fetch(`${SUPA_URL}/rest/v1/results?id=eq.main`, { headers: H });
@@ -251,6 +269,18 @@ export default function App() {
     setConfig(newConfig);
     showToast("Configuración guardada ✅");
   }
+  async function deletePlayer(code) {
+    await sbDeletePlayer(code);
+    const updated = {...players};
+    delete updated[code];
+    setPlayers(updated);
+    showToast(`Jugador ${code} eliminado 🗑️`);
+  }
+  async function deleteAllPlayers() {
+    await sbDeleteAllPlayers();
+    setPlayers({});
+    showToast("Todos los jugadores fueron eliminados 🗑️");
+  }
 
   if (loading) return (
     <div style={S.loadScreen}>
@@ -270,7 +300,7 @@ export default function App() {
         {screen==="register"    && <RegisterScreen onRegister={handleRegister} setScreen={setScreen}/>}
         {screen==="play"        && <PlayScreen user={user} officialBracket={officialBracket} results={results} config={config} onSave={savePredictions}/>}
         {screen==="leaderboard" && <LeaderboardScreen players={players} results={results} config={config} user={user}/>}
-        {screen==="admin"       && <AdminScreen bracket={officialBracket} results={results} config={config} onSave={saveResults} onSaveConfig={saveConfig} showToast={showToast}/>}
+        {screen==="admin"       && <AdminScreen bracket={officialBracket} results={results} config={config} players={players} onSave={saveResults} onSaveConfig={saveConfig} onDeletePlayer={deletePlayer} onDeleteAllPlayers={deleteAllPlayers} showToast={showToast}/>}
       </main>
     </div>
   );
@@ -607,14 +637,15 @@ function LeaderboardScreen({players,results,config,user}) {
 }
 
 // ─── ADMIN ────────────────────────────────────────────────────────────────────
-function AdminScreen({bracket,results,config,onSave,onSaveConfig,showToast}) {
+function AdminScreen({bracket,results,config,players,onSave,onSaveConfig,onDeletePlayer,onDeleteAllPlayers,showToast}) {
   const [pass,setPass]           = useState("");
   const [auth,setAuth]           = useState(false);
   const [localRes,setLocalRes]   = useState(()=>JSON.parse(JSON.stringify(results)));
   const [localBracket,setLocalBracket] = useState(()=>JSON.parse(JSON.stringify(bracket)));
   const [localConfig,setLocalConfig]   = useState(()=>JSON.parse(JSON.stringify(config)));
-  const [activeTab,setActiveTab] = useState("results"); // results | locks
+  const [activeTab,setActiveTab] = useState("results"); // results | locks | players
   const [activeRound,setActiveRound] = useState("r16");
+  const [confirmDeleteAll,setConfirmDeleteAll] = useState(false);
 
   useEffect(()=>{
     setLocalRes(JSON.parse(JSON.stringify(results)));
@@ -701,7 +732,45 @@ function AdminScreen({bracket,results,config,onSave,onSaveConfig,showToast}) {
         <button style={{...S.tab,...(activeTab==="locks"?S.tabOn:{})}} onClick={()=>setActiveTab("locks")}>
           <span style={S.tabLabel}>🔒 BLOQUEOS</span>
         </button>
+        <button style={{...S.tab,...(activeTab==="players"?S.tabOn:{})}} onClick={()=>setActiveTab("players")}>
+          <span style={S.tabLabel}>👤 JUGADORES</span>
+        </button>
       </div>
+
+      {/* PLAYERS TAB */}
+      {activeTab==="players" && (
+        <div style={S.locksPanel}>
+          <p style={S.locksPanelNote}>Aquí puedes ver y eliminar jugadores registrados (útil si quedaron jugadores de otra quiniela compartiendo la misma base de datos).</p>
+          {Object.keys(players||{}).length===0 ? (
+            <div style={S.empty}>No hay jugadores registrados.</div>
+          ) : (
+            Object.entries(players).map(([code,p])=>(
+              <div key={code} style={S.lockMatchRow}>
+                <div style={S.lockMatchInfo}>
+                  <span style={S.lockMatchNum}>{code}</span>
+                  <span style={S.lockMatchTeams}>{p.name}</span>
+                </div>
+                <button style={S.clearBtn} onClick={()=>onDeletePlayer(code)}>✕ Eliminar</button>
+              </div>
+            ))
+          )}
+          <div style={{borderTop:"1px solid #1E3A5F",paddingTop:14,marginTop:8}}>
+            {!confirmDeleteAll ? (
+              <button style={{...S.lockBtn,...S.lockBtnOn,width:"100%"}} onClick={()=>setConfirmDeleteAll(true)}>
+                🗑️ BORRAR TODOS LOS JUGADORES
+              </button>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                <p style={{color:"#EF4444",fontSize:12,textAlign:"center",margin:0}}>¿Seguro? Esto borra a TODOS los jugadores y no se puede deshacer.</p>
+                <div style={{display:"flex",gap:8}}>
+                  <button style={{...S.lockBtn,flex:1}} onClick={()=>setConfirmDeleteAll(false)}>Cancelar</button>
+                  <button style={{...S.lockBtn,...S.lockBtnOn,flex:1}} onClick={()=>{onDeleteAllPlayers();setConfirmDeleteAll(false);}}>Sí, borrar todos</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* LOCKS TAB — por partido */}
       {activeTab==="locks" && (
